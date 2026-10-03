@@ -2,6 +2,10 @@
 
 Mã bài làm nằm trong `code/`. Chạy các lệnh dưới đây từ **thư mục gốc repo** trên máy có GPU. Notebook `code/lab_day2.ipynb` gọi cùng các lệnh. Không sửa `eval.py` gốc. Các file CSV của tác giả dùng fold 0 cố định; test chỉ được đọc ở bước `final`.
 
+## Chạy trên giao diện Kaggle
+
+Vào **Code → New Notebook → Import**, chọn GitHub/URL và nhập `https://github.com/Nituv05/K4-Track4-Day2-Deeplearning-Advance/blob/main/submissions/deepweeds_lab/code/lab_day2.ipynb`. Trong **Settings**, bật **GPU** và **Internet**. Chạy các ô theo thứ tự; ô đầu tự clone repo, ô `prepare` tải ảnh từ Zenodo và kiểm MD5. **Không cần upload dataset thủ công.** Xem kết quả val và phương pháp suy luận được chọn trước khi chạy ô `final` trên test.
+
 ## Cài đặt và thứ tự chạy
 
 ```bash
