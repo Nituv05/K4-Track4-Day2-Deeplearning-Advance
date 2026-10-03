@@ -4,7 +4,7 @@ Mã bài làm nằm trong `code/`. Chạy các lệnh dưới đây từ **thư 
 
 ## Chạy trên giao diện Kaggle
 
-Vào **Code → New Notebook → Import**, chọn GitHub/URL và nhập `https://github.com/Nituv05/K4-Track4-Day2-Deeplearning-Advance/blob/main/submissions/deepweeds_lab/code/lab_day2.ipynb`. Trong **Settings**, bật **GPU** và **Internet**. Chạy các ô theo thứ tự; ô đầu tự clone repo, ô `prepare` tải ảnh từ Zenodo và kiểm MD5. **Không cần upload dataset thủ công.** Xem kết quả val và phương pháp suy luận được chọn trước khi chạy ô `final` trên test.
+Vào **Code → New Notebook → Import**, chọn GitHub/URL và nhập `https://github.com/Nituv05/K4-Track4-Day2-Deeplearning-Advance/blob/main/submissions/deepweeds_lab/code/lab_day2.ipynb`. Trong **Settings**, bật **GPU** và **Internet**. Nếu tải Zenodo không tiện, mở `https://www.kaggle.com/datasets/imsparsh/deepweeds` rồi thêm dataset này ở **Input → Add Input** của notebook. Chạy các ô theo thứ tự; ô đầu tự clone repo, ô `prepare` tự dùng ảnh từ Kaggle Input nếu có và tải CSV fold 0 gốc. Nếu không gắn Input, `prepare` tải ảnh từ Zenodo và kiểm MD5. Xem kết quả val và phương pháp suy luận được chọn trước khi chạy ô `final` trên test.
 
 ## Cài đặt và thứ tự chạy
 

@@ -51,7 +51,30 @@ def _run(cfg):
 
 
 def prepare():
+    import csv
+    import shutil
     LABELS.mkdir(parents=True,exist_ok=True)
+    # A Kaggle Input named DeepWeeds contains images/ plus the original labels/.
+    # Kaggle mounts it read-only, so link images and copy only the small CSVs.
+    if Path("/kaggle/input").is_dir():
+        for input_dir in Path("/kaggle/input").iterdir():
+            source_labels=input_dir/"labels"
+            source_images=input_dir/"images"
+            names=("labels","train_subset0","val_subset0","test_subset0")
+            if source_images.is_dir() and all((source_labels/f"{name}.csv").is_file() for name in names):
+                with (source_labels/"labels.csv").open(newline="") as f:
+                    sample=next(csv.DictReader(f))["Filename"]
+                if not (source_images/sample).is_file():
+                    continue
+                for name in names:
+                    target=LABELS/f"{name}.csv"
+                    if not target.exists():
+                        shutil.copy2(source_labels/f"{name}.csv",target)
+                image_target=DATA/"images"
+                if not image_target.exists():
+                    image_target.symlink_to(source_images,target_is_directory=True)
+                print("Using attached Kaggle Input:",input_dir)
+                return
     for name in ("labels","train_subset0","val_subset0","test_subset0"):
         target=LABELS/f"{name}.csv"
         if not target.exists():
