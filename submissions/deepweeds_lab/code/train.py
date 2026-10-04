@@ -32,7 +32,7 @@ class Config:
     focal_gamma: float = 2.0
     class_weight_beta: float | None = None
     epochs: int = 12
-    batch_size: int = 64
+    batch_size: int = 32
     lr_backbone: float = 1e-4
     lr_head: float = 1e-3
     weight_decay: float = 0.05
@@ -226,11 +226,38 @@ def run(cfg):
     scaler = torch.amp.GradScaler("cuda",enabled=bool(cfg.amp and device.type=="cuda"))
     ema = EMA(net,cfg.ema_decay) if cfg.ema_decay else None
     versions = {"torch":torch.__version__, "timm":timm.__version__,"pandas":pd.__version__}
-    (rd/"config.json").write_text(json.dumps({**asdict(cfg),"device":str(device),"weight_tag":net.weight_tag,"versions":versions},indent=2))
+    config_path=rd/"config.json"
+    recorded=json.loads(json.dumps({**asdict(cfg),"device":str(device),"weight_tag":net.weight_tag,"versions":versions}))
+    if config_path.exists():
+        old=json.loads(config_path.read_text())
+        if any(old.get(k)!=v for k,v in recorded.items() if k!="versions"):
+            raise ValueError(f"Existing run has a different configuration: {rd}")
+    else:
+        config_path.write_text(json.dumps(recorded,indent=2))
     hist=[]
     best=-1.0
     best_epoch=None
-    for epoch in range(1,cfg.epochs+1):
+    start_epoch=1
+    last_path=rd/"last.pt"
+    if last_path.exists():
+        state=torch.load(last_path,map_location=device,weights_only=False)
+        net.load_state_dict(state["model"])
+        opt.load_state_dict(state["optimizer"])
+        sched.load_state_dict(state["scheduler"])
+        scaler.load_state_dict(state["scaler"])
+        if ema:
+            ema.model.load_state_dict(state["ema"])
+        hist=state["history"]
+        best=state["best"]
+        best_epoch=state["best_epoch"]
+        start_epoch=state["epoch"]+1
+        random.setstate(state["python_rng"])
+        np.random.set_state(state["numpy_rng"])
+        torch.set_rng_state(state["torch_rng"].cpu())
+        if device.type=="cuda" and state["cuda_rng"] is not None:
+            torch.cuda.set_rng_state_all(state["cuda_rng"])
+        print(f"Resuming {cfg.exp_id} seed {cfg.seed} from epoch {start_epoch}",flush=True)
+    for epoch in range(start_epoch,cfg.epochs+1):
         t0=time.perf_counter()
         tr=train_one_epoch(net,train_loader,criterion,opt,sched,scaler,cfg,device,ema)
         chosen=ema.model if ema else net
@@ -244,6 +271,15 @@ def run(cfg):
             best=met["macro_f1"]
             best_epoch=epoch
             torch.save({"state_dict":chosen.state_dict(),"epoch":epoch,"val_macro_f1":best},rd/"best.pt")
+        state={"epoch":epoch,"model":net.state_dict(),"optimizer":opt.state_dict(),
+               "scheduler":sched.state_dict(),"scaler":scaler.state_dict(),
+               "ema":ema.model.state_dict() if ema else None,"history":hist,
+               "best":best,"best_epoch":best_epoch,"python_rng":random.getstate(),
+               "numpy_rng":np.random.get_state(),"torch_rng":torch.get_rng_state(),
+               "cuda_rng":torch.cuda.get_rng_state_all() if device.type=="cuda" else None}
+        temporary=rd/"last.pt.tmp"
+        torch.save(state,temporary)
+        temporary.replace(last_path)
         print(cfg.exp_id,cfg.seed,row,flush=True)
     net.load_state_dict(torch.load(rd/"best.pt",map_location=device,weights_only=True)["state_dict"])
     names,y,z,_=evaluate(net,val_loader,criterion,device)
@@ -278,6 +314,7 @@ def run(cfg):
         print(f"GMAC unavailable: {exc}")
     summary={"exp_id":cfg.exp_id,"seed":cfg.seed,"best_epoch":best_epoch,"val_macro_f1":best,"val_top1":hist[best_epoch-1]["val_top1"],"params_m":count_params(net),"gmacs_thop":gmacs,"mean_epoch_seconds":float(np.mean([r["epoch_seconds"] for r in hist])),"weight_tag":net.weight_tag,"temperature":temperature,"final_inference":method,"test_metrics":test_metrics}
     (rd/"summary.json").write_text(json.dumps(summary,indent=2))
+    last_path.unlink(missing_ok=True)
     return summary
 
 

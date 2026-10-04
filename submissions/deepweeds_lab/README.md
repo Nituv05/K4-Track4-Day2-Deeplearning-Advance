@@ -6,6 +6,8 @@ Mã bài làm nằm trong `code/`. Chạy các lệnh dưới đây từ **thư 
 
 Vào **Code → New Notebook → Import**, chọn GitHub/URL và nhập `https://github.com/Nituv05/K4-Track4-Day2-Deeplearning-Advance/blob/main/submissions/deepweeds_lab/code/lab_day2.ipynb`. Trong **Settings**, bật **GPU** và **Internet**. Nếu tải Zenodo không tiện, mở `https://www.kaggle.com/datasets/imsparsh/deepweeds` rồi thêm dataset này ở **Input → Add Input** của notebook. Chạy các ô theo thứ tự; ô đầu tự clone repo, ô `prepare` tự dùng ảnh từ Kaggle Input nếu có và tải CSV fold 0 gốc. Nếu không gắn Input, `prepare` tải ảnh từ Zenodo và kiểm MD5. Xem kết quả val và phương pháp suy luận được chọn trước khi chạy ô `final` trên test.
 
+Trên **Colab**, mở cùng notebook bằng GitHub URL, chọn `Runtime → Change runtime type → GPU`, rồi chạy từ ô đầu. `prepare` tải bộ ảnh Zenodo nếu chưa có `data/images`. Thư mục `/content` bị xóa khi phiên Colab kết thúc: hãy giữ phiên hoạt động đến ô cuối và tải `deepweeds_submission.zip` trong bảng Files. Nếu phiên chỉ bị ngắt kernel nhưng file còn, chạy lại ô đầu và các stage; mỗi thí nghiệm đang dở tiếp tục từ checkpoint của epoch trước. Trên Kaggle, hãy lưu phiên bản notebook kèm output để giữ kết quả.
+
 ## Cài đặt và thứ tự chạy
 
 ```bash
@@ -23,7 +25,7 @@ Kiểm tra CPU trước khi chạy GPU: `python -m unittest discover -s submissi
 
 Lưu ý dữ liệu gốc: các file fold chỉ có `Filename,Label`. Một ảnh `20170714-110407-3.jpg` có nhãn 1 ở `labels.csv` nhưng nhãn 0 ở fold 0. Code giữ nguyên nhãn fold 0 để train/eval, đồng thời ghi sai khác vào `eda.json`.
 
-`backbones` chạy B01–B05 (ResNet-50, ResNeXt-50, ConvNeXt-T, DeiT-S, EfficientNet-B0). `training` chạy T01–T11, mỗi lần thay một yếu tố của baseline B01, rồi T12 kết hợp augmentation và loss tốt nhất theo val. Baseline ở vòng cuối là `T00`, cùng cấu hình với B01. Tất cả đều dùng seed 0, fold 0, 12 epoch, batch 64, AdamW, warmup + cosine, chọn checkpoint theo macro-F1 val. Các ảnh đường cong được tạo trong `curves/`; checkpoint/log/config trong `runs/`.
+`backbones` chạy B01–B05 (ResNet-50, ResNeXt-50, ConvNeXt-T, DeiT-S, EfficientNet-B0). `training` chạy T01–T11, mỗi lần thay một yếu tố của baseline B01, rồi T12 kết hợp augmentation và loss tốt nhất theo val. Baseline ở vòng cuối là `T00`, cùng cấu hình với B01. Tất cả đều dùng seed 0, fold 0, 12 epoch, batch 32, AdamW, warmup + cosine, chọn checkpoint theo macro-F1 val. Batch 32 được dùng đồng nhất cho năm backbone để giảm nguy cơ hết bộ nhớ trên GPU 16 GB; đây là điều chỉnh so với mức 64 đề xuất trong GUIDE. Các ảnh đường cong được tạo trong `curves/`; checkpoint/log/config trong `runs/`.
 
 **Sau khi xem `runs/*/seed0/summary.json`, chọn `SOURCE` bằng macro-F1 val và chi phí tính toán.** Script suy luận hiện hỗ trợ crop/scale với backbone CNN; nên chọn B01 hoặc một T01–T11 để có đủ phương pháp.
 
@@ -41,6 +43,6 @@ python eval.py score --pred 'submissions/deepweeds_lab/predictions/T00_seed*_tes
 python eval.py grade --final 'submissions/deepweeds_lab/predictions/F01_seed*_test.csv' --baseline 'submissions/deepweeds_lab/predictions/T00_seed*_test.csv' --test-csv data/labels/test_subset0.csv --labels data/labels/labels.csv
 ```
 
-`final` huấn luyện lại F01 và T00 với seed 0, 1, 2; đánh giá test đúng một lượt mỗi seed. Nếu chọn I04, `F01uncal_seed*_test.csv` được lưu từ cùng logit test để đối chiếu ECE, không đọc lại test. `export` tạo `results.xlsx` từ log và file dự đoán thật. Chỉ tạo báo cáo sau khi các thí nghiệm thực sự hoàn tất.
+`final` huấn luyện lại F01 và T00 với seed 0, 1, 2; đánh giá test đúng một lượt mỗi seed. Nếu chọn I04, `F01uncal_seed*_test.csv` được lưu từ cùng logit test để đối chiếu ECE, không đọc lại test. Checkpoint `last.pt` được lưu sau mỗi epoch để tiếp tục khi phiên bị ngắt và được xóa sau khi hoàn tất; `best.pt` được giữ lại. `export` tạo `results.xlsx` từ log và file dự đoán thật; khi đủ ba seed của F01 và T00, nó còn tạo `report.md`, ma trận nhầm lẫn, ảnh lỗi và biểu đồ độ chính xác–độ trễ. Ô cuối notebook đóng gói code, README, bảng, báo cáo, ảnh và dự đoán vào `deepweeds_submission.zip` để tải về. Không có số liệu giả được đưa vào báo cáo.
 
 Phiên bản thư viện, seed, tag trọng số, cấu hình và thời gian epoch được ghi trong `runs/<exp_id>/seed<k>/config.json`, `history.csv`, `summary.json`. Tên notebook chạy lại là `code/lab_day2.ipynb`; đường dẫn notebook Colab/Kaggle công khai phải được thêm sau khi bạn tải notebook lên nền tảng đó.

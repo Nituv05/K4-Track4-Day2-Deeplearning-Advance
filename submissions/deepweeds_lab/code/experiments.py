@@ -12,15 +12,17 @@ Examples:
 """
 from __future__ import annotations
 import argparse
-from dataclasses import replace
+from dataclasses import asdict, replace
 import hashlib
 import json
 from pathlib import Path
 import subprocess
+import sys
 import zipfile
 import numpy as np
 
 ROOT=Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
 SUB=Path(__file__).resolve().parent.parent
 DATA=ROOT/"data"
 LABELS=DATA/"labels"
@@ -43,6 +45,12 @@ def _completed(exp_id,seed):
 def _run(cfg):
     from train import run
     if _completed(cfg.exp_id,cfg.seed):
+        existing=json.loads((RUNS/cfg.exp_id/f"seed{cfg.seed}"/"config.json").read_text())
+        for key,value in asdict(cfg).items():
+            if key in ("norm_mean","norm_std") and value is None:
+                continue
+            if json.loads(json.dumps(value)) != existing.get(key):
+                raise ValueError(f"Completed {cfg.exp_id} seed {cfg.seed} used a different {key}; choose a new run ID or clean the old run deliberately")
         if cfg.save_test_predictions and not (PREDS/f"{cfg.exp_id}_seed{cfg.seed}_test.csv").exists():
             raise FileNotFoundError("Completed final run lacks test predictions; inspect before continuing")
         print("Already complete:",cfg.exp_id,cfg.seed)
@@ -242,11 +250,8 @@ def inference(source):
     if cfg.backbone.startswith(("deit","vit","swin")):
         methods=["I00","I01","I04","I05"]
     records=[]
-    x=torch.randn(1,3,cfg.img_size,cfg.img_size,device=device)
-    for method in methods:
-        names,y,p,_=predict_variant(model,loader,device,method,T if method=="I04" else None)
-        save_predictions(PREDS/f"{method}_seed0_val.csv",names,y,p)
-        m=compute_metrics(y,p.argmax(1),p)
+    def measure(method, batch):
+        x=torch.randn(batch,3,cfg.img_size,cfg.img_size,device=device)
         bench_model=fuse_conv_bn(model) if method=="I05" else model
         def forward():
             with torch.inference_mode():
@@ -260,8 +265,14 @@ def inference(source):
                 elif method=="I04":
                     torch.softmax(z/T,dim=1)
         sync=(lambda:torch.cuda.synchronize(device)) if device.type=="cuda" else None
-        latency=bench(forward,10,100,sync)
-        record={"exp_id":method,"source":source,"method":method,"k":6 if method=="I02" else 2 if method in ("I01","I03") else 1,"val_macro_f1":m["macro_f1"],"val_top1":m["top1"],"val_ece":m["ece"],"temperature":T if method=="I04" else None,"device":str(device),"batch":1,"dtype":"fp32","img_size":cfg.img_size,"latency":latency}
+        return bench(forward,10,100,sync)
+    for method in methods:
+        names,y,p,_=predict_variant(model,loader,device,method,T if method=="I04" else None)
+        save_predictions(PREDS/f"{method}_seed0_val.csv",names,y,p)
+        m=compute_metrics(y,p.argmax(1),p)
+        latency=measure(method,1)
+        latency_batch16=measure(method,16)
+        record={"exp_id":method,"source":source,"method":method,"k":6 if method=="I02" else 2 if method in ("I01","I03") else 1,"val_macro_f1":m["macro_f1"],"val_top1":m["top1"],"val_ece":m["ece"],"temperature":T if method=="I04" else None,"device":str(device),"batch":1,"dtype":"fp32","img_size":cfg.img_size,"latency":latency,"latency_batch16":latency_batch16}
         records.append(record)
         print(record,flush=True)
     (SUB/"inference_results.json").write_text(json.dumps(records,indent=2))
@@ -277,6 +288,12 @@ def final(source,method):
     selection_file=SUB/"inference_results.json"
     if not selection_file.exists() or not any(r["source"]==source and r["method"]==method for r in json.loads(selection_file.read_text())):
         raise ValueError("Run inference on the selected source and choose a method measured on val first")
+    locked=SUB/"final_selection.json"
+    selection={"source":source,"method":method}
+    if locked.exists() and json.loads(locked.read_text())!=selection:
+        raise ValueError("Final source/method was already locked before test; do not select a new configuration using test results")
+    if not locked.exists():
+        locked.write_text(json.dumps(selection,indent=2))
     rd=RUNS/source/"seed0"
     cfg=Config(**{k:v for k,v in json.loads((rd/"config.json").read_text()).items() if k in Config.__dataclass_fields__})
     # Selection is explicit and must be based only on inference_results.json (val).
@@ -320,6 +337,9 @@ def export():
             lat=r["latency"]
             rows["Inference"].append({"exp_id":r["exp_id"],"method":r["method"],"source":r["source"],"K":r["k"],"macro_F1_val":r["val_macro_f1"],"top1_val":r["val_top1"],"ECE_val":r["val_ece"],"p50_ms":lat["p50"],"p95_ms":lat["p95"],"p99_ms":lat["p99"],"images_per_s":1000/lat["p50"],"cost_vs_I00":lat["p50"]/base_p50 if base_p50 else None})
             rows["Latency"].append({"configuration":r["exp_id"],"device":r["device"],"dtype":r["dtype"],"batch":1,"fused_BN":r["method"]=="I05","p50_ms":lat["p50"],"p95_ms":lat["p95"],"p99_ms":lat["p99"],"images_per_s":1000/lat["p50"]})
+            if "latency_batch16" in r:
+                lat16=r["latency_batch16"]
+                rows["Latency"].append({"configuration":r["exp_id"],"device":r["device"],"dtype":r["dtype"],"batch":16,"fused_BN":r["method"]=="I05","p50_ms":lat16["p50"],"p95_ms":lat16["p95"],"p99_ms":lat16["p99"],"images_per_s":16000/lat16["p50"]})
             rows["Summary"].append({"exp_id":r["exp_id"],"macro_F1_val":r["val_macro_f1"],"top1_val":r["val_top1"],"p95_ms_batch1":lat["p95"]})
     for exp in ("T00","F01"):
         files=sorted(PREDS.glob(f"{exp}_seed*_test.csv"))
@@ -346,6 +366,9 @@ def export():
                 col_letter=col[0].column_letter
                 ws.column_dimensions[col_letter].width=min(50,max(13,max(len(str(cell.value or "")) for cell in col)+2))
     print("Wrote",SUB/"results.xlsx")
+    if all((PREDS/f"{exp}_seed{seed}_test.csv").exists() for exp in ("T00","F01") for seed in (0,1,2)):
+        from report import generate_report
+        generate_report()
 
 
 def main():
