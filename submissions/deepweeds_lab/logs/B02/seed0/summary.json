@@ -1,0 +1,14 @@
+{
+  "exp_id": "B02",
+  "seed": 0,
+  "best_epoch": 8,
+  "val_macro_f1": 0.8468545619456301,
+  "val_top1": 0.8806055412739218,
+  "params_m": 22.998345,
+  "gmacs_thop": 4.286154752,
+  "mean_epoch_seconds": 14.354583253754148,
+  "weight_tag": "timm/resnext50_32x4d.a1h_in1k",
+  "temperature": null,
+  "final_inference": "I00",
+  "test_metrics": null
+}

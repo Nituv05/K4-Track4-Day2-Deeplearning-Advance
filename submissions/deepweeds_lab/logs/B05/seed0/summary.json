@@ -1,0 +1,14 @@
+{
+  "exp_id": "B05",
+  "seed": 0,
+  "best_epoch": 11,
+  "val_macro_f1": 0.8312956806844063,
+  "val_top1": 0.8723221936589546,
+  "params_m": 4.019077,
+  "gmacs_thop": 0.384610272,
+  "mean_epoch_seconds": 9.829682683402401,
+  "weight_tag": "timm/efficientnet_b0.ra_in1k",
+  "temperature": null,
+  "final_inference": "I00",
+  "test_metrics": null
+}

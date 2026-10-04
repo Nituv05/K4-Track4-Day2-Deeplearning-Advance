@@ -1,0 +1,20 @@
+{
+  "exp_id": "T00",
+  "seed": 1,
+  "best_epoch": 11,
+  "val_macro_f1": 0.8274303003510366,
+  "val_top1": 0.8731790916880892,
+  "params_m": 23.526473,
+  "gmacs_thop": 4.131713024,
+  "mean_epoch_seconds": 14.986049972493978,
+  "weight_tag": "timm/resnet50.a1_in1k",
+  "temperature": null,
+  "final_inference": "I00",
+  "test_metrics": {
+    "top1": 0.8842315369261478,
+    "macro_f1": 0.8464761574525035,
+    "balanced_acc": 0.8248129283960266,
+    "ece": 0.020643895035804986,
+    "nll": 0.3584833701495738
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "exp_id": "B04",
+  "seed": 0,
+  "best_epoch": 11,
+  "val_macro_f1": 0.9515618182913043,
+  "val_top1": 0.9651528134818623,
+  "params_m": 21.669129,
+  "gmacs_thop": 4.240838016,
+  "mean_epoch_seconds": 10.012947924503047,
+  "weight_tag": "timm/deit_small_patch16_224.fb_in1k",
+  "temperature": null,
+  "final_inference": "I00",
+  "test_metrics": null
+}

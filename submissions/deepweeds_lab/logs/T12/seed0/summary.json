@@ -1,0 +1,14 @@
+{
+  "exp_id": "T12",
+  "seed": 0,
+  "best_epoch": 11,
+  "val_macro_f1": 0.8525066520331163,
+  "val_top1": 0.887460725506998,
+  "params_m": 23.526473,
+  "gmacs_thop": 4.131713024,
+  "mean_epoch_seconds": 12.488208621939217,
+  "weight_tag": "timm/resnet50.a1_in1k",
+  "temperature": null,
+  "final_inference": "I00",
+  "test_metrics": null
+}

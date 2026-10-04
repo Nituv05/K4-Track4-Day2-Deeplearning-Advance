@@ -1,0 +1,72 @@
+{
+  "B01": {
+    "p50": 1.4764334773644805,
+    "p95": 2.2341382922604676,
+    "p99": 2.6501338853267984,
+    "mean": 1.5557353553595021,
+    "n": 100,
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "dtype": "fp32",
+    "batch": 1,
+    "img_size": 224,
+    "images_per_s": 677.307860686726,
+    "torch": "2.9.0+cu126",
+    "scope": "forward only; synthetic input"
+  },
+  "B02": {
+    "p50": 1.495972479460761,
+    "p95": 1.8932796374429013,
+    "p99": 2.5853681261651262,
+    "mean": 1.560972764273174,
+    "n": 100,
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "dtype": "fp32",
+    "batch": 1,
+    "img_size": 224,
+    "images_per_s": 668.4614949336906,
+    "torch": "2.9.0+cu126",
+    "scope": "forward only; synthetic input"
+  },
+  "B03": {
+    "p50": 1.6986224800348282,
+    "p95": 1.9831632205750793,
+    "p99": 2.615378916379997,
+    "mean": 1.673859587754123,
+    "n": 100,
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "dtype": "fp32",
+    "batch": 1,
+    "img_size": 224,
+    "images_per_s": 588.7123311705473,
+    "torch": "2.9.0+cu126",
+    "scope": "forward only; synthetic input"
+  },
+  "B04": {
+    "p50": 1.8184134969487786,
+    "p95": 2.7193404908757657,
+    "p99": 2.7905483864015004,
+    "mean": 1.8670802097767591,
+    "n": 100,
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "dtype": "fp32",
+    "batch": 1,
+    "img_size": 224,
+    "images_per_s": 549.9299261020433,
+    "torch": "2.9.0+cu126",
+    "scope": "forward only; synthetic input"
+  },
+  "B05": {
+    "p50": 1.6630879836156964,
+    "p95": 1.7917930032126606,
+    "p99": 1.861922409152615,
+    "mean": 1.6808971599675715,
+    "n": 100,
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "dtype": "fp32",
+    "batch": 1,
+    "img_size": 224,
+    "images_per_s": 601.2910981570043,
+    "torch": "2.9.0+cu126",
+    "scope": "forward only; synthetic input"
+  }
+}

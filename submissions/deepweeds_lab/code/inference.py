@@ -115,7 +115,7 @@ def predict_variant(model, loader, device, method="I00", temperature=None):
                 p=aggregate_views([z,z2],"prob")
             elif method == "I02":
                 zs=[model(v).float().cpu().numpy() for v in views_multicrop(x,192)]
-                p=aggregate_views(zs,"logit")
+                p=aggregate_views([z,*zs],"logit")
             elif method == "I03":
                 # Use the base 224 view plus a 256 view; only CNNs with
                 # flexible spatial dimensions should use this method.

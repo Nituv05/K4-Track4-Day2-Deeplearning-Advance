@@ -16,6 +16,7 @@ from dataclasses import asdict, replace
 import hashlib
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import zipfile
@@ -183,6 +184,7 @@ def sanity():
         raise AssertionError(f"focal gamma=0 differs from CE: {focal_error}")
     mixed,(_,_,lam)=mix_batch(x,y,1.0,"cutmix")
     print("uniform head CE theoretical",float(np.log(9)),"initial head loss",initial_loss,"overfit final loss",history[-1],"focal gamma=0 error",focal_error,"CutMix lambda",lam)
+    (SUB/"sanity.json").write_text(json.dumps({"uniform_ce_theory":float(np.log(9)),"initial_head_loss":initial_loss,"overfit_final_loss":history[-1],"focal_gamma0_error":focal_error,"cutmix_lambda":float(lam)},indent=2))
     fig,ax=plt.subplots();ax.plot(history);ax.set(xlabel="Update",ylabel="CE",title="Overfit one batch");fig.savefig(CURVES/"sanity_overfit.png",dpi=160);plt.close(fig)
     # De-normalize a mixed image to verify spatial placement visually.
     mean=torch.tensor((.485,.456,.406),device=device)[:,None,None]
@@ -279,7 +281,7 @@ def inference(source):
         m=compute_metrics(y,p.argmax(1),p)
         latency=measure(method,1)
         latency_batch16=measure(method,16)
-        record={"exp_id":method,"source":source,"method":method,"k":6 if method=="I02" else 2 if method in ("I01","I03") else 1,"val_macro_f1":m["macro_f1"],"val_top1":m["top1"],"val_ece":m["ece"],"temperature":T if method=="I04" else None,"device":str(device),"batch":1,"dtype":"fp32","img_size":cfg.img_size,"latency":latency,"latency_batch16":latency_batch16}
+        record={"exp_id":method,"source":source,"method":method,"k":6 if method=="I02" else 2 if method in ("I01","I03") else 1,"val_macro_f1":m["macro_f1"],"val_top1":m["top1"],"val_ece":m["ece"],"temperature":T if method=="I04" else None,"device":torch.cuda.get_device_name(device) if device.type=="cuda" else str(device),"batch":1,"dtype":"fp32","img_size":cfg.img_size,"latency":latency,"latency_batch16":latency_batch16}
         records.append(record)
         print(record,flush=True)
     (SUB/"inference_results.json").write_text(json.dumps(records,indent=2))
@@ -309,6 +311,21 @@ def final(source,method):
         _run(replace(cfg,exp_id="F01",seed=seed,save_test_predictions=True,final_inference=method,final_temperature=False))
 
 
+def snapshot_logs():
+    """Keep small, reviewable run evidence in the submission without model weights."""
+    names=("config.json","history.csv","summary.json","split_stats.json",
+           "val_logits.npz","test_logits.npz","test_started.flag")
+    for run in RUNS.glob("*/seed*"):
+        if not (run/"summary.json").is_file():
+            continue
+        target=SUB/"logs"/run.parent.name/run.name
+        target.mkdir(parents=True,exist_ok=True)
+        for name in names:
+            source=run/name
+            if source.is_file():
+                shutil.copy2(source,target/name)
+
+
 def export():
     import pandas as pd
     from eval import load_group,read_pred,compute_metrics,CLASS_NAMES
@@ -322,7 +339,7 @@ def export():
         if not p.exists(): continue
         s=json.loads(p.read_text()); c=json.loads((rd/"config.json").read_text())
         lat=backbone_latency.get(exp,{})
-        rows["Backbones"].append({"exp_id":exp,"backbone":c["backbone"],"weight_tag":s["weight_tag"],"params_M":s["params_m"],"GMAC_thop":s["gmacs_thop"],"img_size":c["img_size"],"epochs":c["epochs"],"seed":0,"macro_F1_val":s["val_macro_f1"],"top1_val":s["val_top1"],"seconds_per_epoch":s["mean_epoch_seconds"],"latency_p95_ms_batch1":lat.get("p95")})
+        rows["Backbones"].append({"exp_id":exp,"backbone":c["backbone"],"weight_tag":s["weight_tag"],"params_M":s["params_m"],"GMAC_thop":s["gmacs_thop"],"img_size":c["img_size"],"epochs":c["epochs"],"seed":0,"macro_F1_val":s["val_macro_f1"],"top1_val":s["val_top1"],"seconds_per_epoch":s["mean_epoch_seconds"],"latency_p95_ms_batch1":lat.get("p95"),"notes":"same baseline recipe; one seed"})
         rows["Summary"].append({"exp_id":exp,"macro_F1_val":s["val_macro_f1"],"top1_val":s["val_top1"],"p95_ms_batch1":lat.get("p95")})
         if lat:
             rows["Latency"].append({"configuration":exp,"device":lat["gpu"],"dtype":lat["dtype"],"batch":1,"fused_BN":False,"p50_ms":lat["p50"],"p95_ms":lat["p95"],"p99_ms":lat["p99"],"images_per_s":lat["images_per_s"]})
@@ -353,26 +370,43 @@ def export():
         if not files:continue
         group=load_group(str(PREDS/f"{exp}_seed*_test.csv"),str(LABELS/"test_subset0.csv"))
         val_f1=[]
+        val_top1=[]
         for pred,metric in zip(group.preds,group.metrics):
             vp=read_pred(str(PREDS/f"{exp}_seed{pred.seed}_val.csv"))
             vm=compute_metrics(vp.y_true,vp.y_pred,vp.probs)
             val_f1.append(vm["macro_f1"])
+            val_top1.append(vm["top1"])
             config=json.loads((RUNS/exp/f"seed{pred.seed}"/"config.json").read_text())
             recipe=f"{config['backbone']} + {config['aug']} + {config['loss']} + {config.get('final_inference','I00')}"
             rows["Final"].append({"exp_id":exp,"recipe":recipe,"seed":pred.seed,"macro_F1_val":vm["macro_f1"],"macro_F1_test":metric["macro_f1"],"top1_test":metric["top1"],"ECE_test":metric["ece"]})
         rows["Final"].append({"exp_id":exp,"seed":"mean ± std","macro_F1_val":f"{np.mean(val_f1):.4f} ± {np.std(val_f1,ddof=1):.4f}","macro_F1_test":str(group.summary["macro_f1"]),"top1_test":str(group.summary["top1"]),"ECE_test":str(group.summary["ece"])})
+        rows["Summary"].append({"exp_id":exp,"macro_F1_val":float(np.mean(val_f1)),"top1_val":float(np.mean(val_top1)),"macro_F1_test_mean":group.summary["macro_f1"][0],"macro_F1_test_std":group.summary["macro_f1"][1],"p95_ms_batch1":None})
         for i,name in enumerate(CLASS_NAMES):
             rows["PerClass"].append({"exp_id":exp,"class":name,"n_test":int(group.metrics[0]["support"][i]),"precision_mean":float(group.summary["precision"][0][i]),"recall_mean":float(group.summary["recall"][0][i]),"F1_mean":float(group.summary["f1"][0][i]),"F1_std":float(group.summary["f1"][1][i])})
-    rows["Summary"].sort(key=lambda r:r["macro_F1_val"],reverse=True)
-    rows["Summary"]=rows["Summary"][:10]
+    screened=sorted((r for r in rows["Summary"] if r["exp_id"] not in ("T00","F01")),key=lambda r:r["macro_F1_val"],reverse=True)
+    finals=[r for r in rows["Summary"] if r["exp_id"] in ("T00","F01")]
+    rows["Summary"]=screened[:8]+finals
     with pd.ExcelWriter(SUB/"results.xlsx",engine="openpyxl") as writer:
+        from openpyxl.styles import Font, PatternFill
+        chosen=json.loads((SUB/"final_selection.json").read_text())["method"] if (SUB/"final_selection.json").exists() else None
         for sheet,records in rows.items():
             pd.DataFrame(records).to_excel(writer,sheet_name=sheet,index=False)
             ws=writer.sheets[sheet];ws.freeze_panes="A2";ws.auto_filter.ref=ws.dimensions
+            if sheet=="Summary":
+                colors={"F01":"E2F0D9","T00":"E7E6E6"}
+                if chosen:
+                    colors[chosen]="DDEBF7"
+                for row in ws.iter_rows(min_row=2):
+                    fill=colors.get(row[0].value)
+                    if fill:
+                        for cell in row:
+                            cell.fill=PatternFill(fill_type="solid",fgColor=fill)
+                            cell.font=Font(bold=True)
             for col in ws.columns:
                 col_letter=col[0].column_letter
                 ws.column_dimensions[col_letter].width=min(50,max(13,max(len(str(cell.value or "")) for cell in col)+2))
     print("Wrote",SUB/"results.xlsx")
+    snapshot_logs()
     if all((PREDS/f"{exp}_seed{seed}_test.csv").exists() for exp in ("T00","F01") for seed in (0,1,2)):
         from report import generate_report
         generate_report()

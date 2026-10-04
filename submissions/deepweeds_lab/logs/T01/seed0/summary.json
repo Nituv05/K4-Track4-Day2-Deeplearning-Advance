@@ -1,0 +1,14 @@
+{
+  "exp_id": "T01",
+  "seed": 0,
+  "best_epoch": 12,
+  "val_macro_f1": 0.5274708709801526,
+  "val_top1": 0.6600971151099686,
+  "params_m": 23.526473,
+  "gmacs_thop": 4.131713024,
+  "mean_epoch_seconds": 12.396820237835831,
+  "weight_tag": "scratch",
+  "temperature": null,
+  "final_inference": "I00",
+  "test_metrics": null
+}

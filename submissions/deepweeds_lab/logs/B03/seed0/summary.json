@@ -1,0 +1,14 @@
+{
+  "exp_id": "B03",
+  "seed": 0,
+  "best_epoch": 10,
+  "val_macro_f1": 0.9689753983973224,
+  "val_top1": 0.9762924878606113,
+  "params_m": 27.827049,
+  "gmacs_thop": 4.454808576,
+  "mean_epoch_seconds": 14.668529210083458,
+  "weight_tag": "timm/convnext_tiny.in12k_ft_in1k",
+  "temperature": null,
+  "final_inference": "I00",
+  "test_metrics": null
+}

@@ -41,6 +41,11 @@ def generate_report():
     cfg = json.loads((RUNS / "F01" / "seed0" / "config.json").read_text())
     baseline_cfg = json.loads((RUNS / "T00" / "seed0" / "config.json").read_text())
     eda = json.loads((SUB / "eda.json").read_text())
+    sanity_path=SUB/"sanity.json"
+    sanity=json.loads(sanity_path.read_text()) if sanity_path.exists() else None
+    backbone_latency_path=SUB/"backbone_latency.json"
+    backbone_latency=json.loads(backbone_latency_path.read_text()) if backbone_latency_path.exists() else {}
+    gpu_name=backbone_latency.get("B01",{}).get("gpu",cfg.get("device","unknown"))
     infer = json.loads((SUB / "inference_results.json").read_text())
     locked = json.loads((SUB / "final_selection.json").read_text())
     if locked["method"] != cfg["final_inference"]:
@@ -98,9 +103,11 @@ def generate_report():
     for exp, name in BACKBONES:
         s=_summary(exp)
         if s:
+            lat=backbone_latency.get(exp,{})
             b_rows.append((exp, name, s["weight_tag"], f"{s['params_m']:.2f}",
                            f"{s['gmacs_thop']:.2f}" if s["gmacs_thop"] is not None else "unavailable",
-                           f"{s['val_macro_f1']:.4f}", f"{s['val_top1']:.4f}"))
+                           f"{s['val_macro_f1']:.4f}", f"{s['val_top1']:.4f}",
+                           f"{s['mean_epoch_seconds']:.1f}",f"{lat['p95']:.2f}" if lat else "unavailable"))
     base = _summary("B01")
     t_rows=[]
     for exp, changes in TRAINING + ([('T12', json.loads((SUB/'T12_recipe.json').read_text())['changes'])] if (SUB/'T12_recipe.json').exists() else []):
@@ -133,13 +140,38 @@ def generate_report():
     pair_indices=np.dstack(np.unravel_index(np.argsort(pairs.ravel())[::-1],pairs.shape))[0]
     top_pairs=[f"{CLASS_NAMES[i]} → {CLASS_NAMES[j]}: {pairs[i,j]} ảnh" for i,j in pair_indices if pairs[i,j]>0][:5]
     source=locked["source"]
-    device=cfg.get("device","unknown")
     best_backbone=max((exp for exp,_ in BACKBONES if _summary(exp)),
                       key=lambda exp:_summary(exp)["val_macro_f1"])
     best_training=max((exp for exp,_ in TRAINING if _summary(exp)),
                       key=lambda exp:_summary(exp)["val_macro_f1"])
     baseline_infer=next(r for r in infer if r["method"]=="I00")
     calibration=next((r for r in infer if r["method"]=="I04"),None)
+    calibration_note=(f"F01 dùng {locked['method']}, không dùng temperature scaling trên test; vì vậy I4(a) của eval.py không được chấm. "
+                      if locked["method"]!="I04" else "F01 dùng temperature scaling đã khớp trên val. ")
+    backbone_gain=_summary(best_backbone)["val_macro_f1"]-base["val_macro_f1"]
+    training_gain=_summary(best_training)["val_macro_f1"]-base["val_macro_f1"]
+    inference_gain=selected["val_macro_f1"]-baseline_infer["val_macro_f1"]
+    combo_path=SUB/"T12_recipe.json"
+    if combo_path.exists() and _summary("T12"):
+        combo=json.loads(combo_path.read_text())
+        aug_source,loss_source=combo["augmentation_source"],combo["loss_source"]
+        combo_delta=_summary("T12")["val_macro_f1"]-max(_summary(aug_source)["val_macro_f1"],_summary(loss_source)["val_macro_f1"])
+        combo_text=(f"T12 kết hợp {aug_source} và {loss_source}: macro-F1 val {_summary('T12')['val_macro_f1']:.4f}, "
+                    f"chênh {combo_delta:+.4f} so với thành phần đơn lẻ tốt hơn. "
+                    "Đây là một seed; chưa thể khẳng định hai yếu tố cộng dồn nếu chênh lệch nhỏ.")
+    else:
+        combo_text="T12 chưa có kết quả để đánh giá tương tác giữa các yếu tố."
+    class_counts=eda.get("all_classes",[])
+    mismatch_count=len(eda.get("label_disagreements",[]))
+    imbalance=(f"Lớp Negatives có {class_counts[8]:,} ảnh, chiếm {class_counts[8]/sum(class_counts):.1%}; "
+               f"các lớp cây có {min(class_counts[:8]):,}–{max(class_counts[:8]):,} ảnh/lớp. "
+               "Phân bố này khớp số lượng trong Table 1 của bài báo và giải thích vì sao báo cáo thêm macro-F1, recall từng lớp."
+               if len(class_counts)==9 else "Phân bố lớp được thể hiện trong biểu đồ dưới đây.")
+    sanity_text=(f"Kiểm pipeline: CE lý thuyết ln 9 = {sanity['uniform_ce_theory']:.4f}; "
+                 f"loss head ban đầu {sanity['initial_head_loss']:.4f}, sau overfit một batch còn {sanity['overfit_final_loss']:.6f}; "
+                 f"sai khác Focal γ=0 với CE là {sanity['focal_gamma0_error']:.2e}. "
+                 "Ảnh kiểm augmentation và CutMix ở `curves/sanity_augmented.png` và `curves/sanity_cutmix.png`."
+                 if sanity else "Ảnh kiểm augmentation và CutMix được lưu trong `curves/`.")
     robot=[]
     for budget in (30,100):
         feasible=[r for r in infer if r["latency"]["p95"]<=budget]
@@ -159,16 +191,19 @@ def generate_report():
         f"DeepWeeds gồm {eda['split']['union']:,} ảnh, fold 0: train {eda['split']['n']['train']:,}, "
         f"val {eda['split']['n']['val']:,}, test {eda['split']['n']['test']:,}; giao giữa các tập bằng 0. "
         "Nhãn train/val/test lấy theo CSV fold 0 của tác giả. Chỉ dùng val để chọn mô hình, công thức, checkpoint và suy luận. "
-        "Test được đánh giá một lượt cho mỗi seed sau khi chốt lựa chọn.", "",
+        f"Test được đánh giá một lượt cho mỗi seed sau khi chốt lựa chọn. Có {mismatch_count} ảnh có nhãn khác giữa labels.csv và CSV fold 0; "
+        "bài làm giữ nguyên nhãn của CSV fold 0.", "",
         f"Baseline: {baseline_cfg['backbone']}, ImageNet pretrained ({baseline_cfg['weight_tag']}), "
         f"{baseline_cfg['epochs']} epoch, batch {baseline_cfg['batch_size']}, ảnh {baseline_cfg['img_size']} px, "
         f"AdamW, LR backbone {baseline_cfg['lr_backbone']}, head {baseline_cfg['lr_head']}, "
         f"weight decay {baseline_cfg['weight_decay']}, warmup {baseline_cfg['warmup_epochs']} epoch rồi cosine; "
-        f"seed 0/1/2. Thiết bị cuối: {device}; PyTorch {cfg['versions']['torch']}, timm {cfg['versions']['timm']}. "
+        f"seed 0/1/2. Thiết bị cuối: {gpu_name}; PyTorch {cfg['versions']['torch']}, timm {cfg['versions']['timm']}. "
         "Chỉ số tính bằng eval.py gốc; ECE dùng 15 bin; std mẫu ddof=1.", "",
+        imbalance, "", sanity_text, "",
         "![Phân bố lớp](curves/class_distribution.png)", "",
+        "![Ảnh mẫu từng lớp](curves/class_samples.png)", "",
         "## 3. So sánh backbone trên val", "",
-        _table(["ID","Backbone","Tag","Params M","GMAC thop","Macro-F1 val","Top-1 val"],b_rows), "",
+        _table(["ID","Backbone","Tag","Params M","GMAC thop","Macro-F1 val","Top-1 val","s/epoch","p95 ms"],b_rows), "",
         f"Trong năm backbone, {best_backbone} có macro-F1 val cao nhất ({_summary(best_backbone)['val_macro_f1']:.4f}) ở seed 0.", "",
         "Cùng fold 0, seed 0 và công thức nền. GMAC do thop ước tính; xem riêng độ trễ đo trên GPU trong results.xlsx. "
         "Các chênh lệch ở bước sàng lọc này chỉ dựa trên một seed.", "",
@@ -178,6 +213,10 @@ def generate_report():
         f"B01 đạt {_summary('B01')['val_macro_f1']:.4f}. Đây là so sánh seed 0.", "",
         "Mỗi T01–T11 thay một yếu tố so với B01/T00; T12 kết hợp augmentation và loss chọn bằng val. "
         "Các Δ này là kết quả một seed, chưa đủ để kết luận hiệu quả ổn định khi chênh lệch nhỏ.", "",
+        combo_text, "",
+        f"Đường cong B01 nằm ở `curves/B01_seed0.png`; checkpoint tốt nhất ở epoch {_summary('B01')['best_epoch']}. "
+        f"Đường cong {best_training} nằm ở `curves/{best_training}_seed0.png`, checkpoint tốt nhất ở epoch {_summary(best_training)['best_epoch']}. "
+        "So sánh loss train/val trên các đường cong để nhận diện hội tụ và quá khớp; giá trị từng epoch nằm trong log.", "",
         "## 5. Suy luận và chi phí", "",
         _table(["ID","Views","Macro-F1 val","ECE val","p50 ms","p95 ms","p99 ms"],i_rows), "",
         f"Các phép đo trên {selected['device']}, batch 1, FP32, 10 warmup và 100 lần đo, đồng bộ CUDA khi dùng GPU; "
@@ -187,7 +226,7 @@ def generate_report():
         +
         (f"Temperature scaling đổi ECE val từ {baseline_infer['val_ece']:.4f} sang {calibration['val_ece']:.4f}; "
          f"macro-F1 đổi từ {baseline_infer['val_macro_f1']:.4f} sang {calibration['val_macro_f1']:.4f}. " if calibration else "")
-        + " ".join(robot) + " Chỉ đo forward; cần đo cả pipeline trước khi chọn phương án triển khai thực tế.", "",
+        + calibration_note + " ".join(robot) + " Chỉ đo forward; cần đo cả pipeline trước khi chọn phương án triển khai thực tế.", "",
         "![Đánh đổi độ trễ và macro-F1](curves/inference_tradeoff.png)", "",
         "## 6. Chung kết trên test", "",
         f"Cấu hình F01: `{json.dumps({k:cfg[k] for k in ('backbone','init','aug','loss','sampler','mix','ema_decay','epochs','batch_size','img_size','lr_backbone','lr_head','weight_decay','final_inference')},ensure_ascii=False)}`.", "",
@@ -195,7 +234,10 @@ def generate_report():
         f"Mốc T00 macro-F1 test {fmt(*baseline.summary['macro_f1'])}; F01 cải thiện {delta:+.4f}. {conclusion}", "",
         _table(["Lớp","Ảnh test","Precision F01","Recall F01","F1 F01"],class_rows), "",
         "Ma trận nhầm lẫn dưới đây thuộc F01 seed 0 (hàng là nhãn thật, cột là nhãn dự đoán). "
-        "Các cặp nhầm nhiều nhất của seed này: " + ("; ".join(top_pairs) if top_pairs else "không có") + ".", "",
+        "Các cặp nhầm nhiều nhất của seed này: " + ("; ".join(top_pairs) if top_pairs else "không có") + ". "
+        f"Riêng Chinee Apple → Snake Weed: {cm[0,7]} ảnh; Snake Weed → Chinee Apple: {cm[7,0]} ảnh. "
+        "Giả thuyết cần kiểm thêm: hình dạng lá, nền và điều kiện chiếu sáng tương tự có thể làm hai lớp khó phân biệt; "
+        "ảnh lỗi bên dưới chỉ minh họa, chưa chứng minh nguyên nhân.", "",
         "![Confusion matrix](curves/F01_confusion_seed0.png)", "",
         "Ảnh dưới đây là tối đa 12 lỗi test có độ tin cậy dự đoán sai cao nhất của F01 seed 0. "
         "Chúng minh họa kiểu lỗi; không dùng để chỉnh mô hình sau khi xem test.", "",
@@ -207,16 +249,19 @@ def generate_report():
     lines += ["## 7. Kết luận và hạn chế", "",
               f"Cấu hình được chọn bằng val là {source} + {cfg['final_inference']}. "
               f"Mức cải thiện test so với baseline là {delta:+.4f} macro-F1. {conclusion} "
-              "So sánh đóng góp riêng của backbone, công thức và suy luận dựa trên các bảng val ở trên; "
-              "không dùng test để chọn lại cấu hình.", "",
+              f"Trên val seed 0, backbone cao nhất hơn B01 {backbone_gain:+.4f}, công thức đơn lẻ cao nhất hơn B01 {training_gain:+.4f}, "
+              f"và phương pháp suy luận đã chọn đổi macro-F1 so với I00 trên cùng nguồn {inference_gain:+.4f}. "
+              "Ba chênh lệch này thuộc các phép sàng lọc khác nhau, không cộng lại thành đóng góp nhân quả. "
+              "Không dùng test để chọn lại cấu hình.", "",
               "Nghiên cứu chỉ dùng fold 0 và ba seed ở chung kết. Các thí nghiệm sàng lọc dùng một seed. "
               "Fold của DeepWeeds không tách theo địa điểm hoặc mùa, nên điểm test có thể lạc quan khi triển khai ngoài miền dữ liệu. "
               "Độ trễ forward với ảnh tổng hợp chưa bao gồm đọc ảnh, tiền xử lý hay truyền dữ liệu; cần đo toàn pipeline trên robot trước khi triển khai.", "",
               "## 8. Tái lập", "",
-              "Cấu hình, tag trọng số, phiên bản, lịch sử epoch và checkpoint nằm trong `runs/<exp_id>/seed<k>/`. "
+              "Cấu hình, tag trọng số, phiên bản và lịch sử epoch nằm trong `logs/<exp_id>/seed<k>/` của bài nộp; "
+              "checkpoint được giữ tại `runs/<exp_id>/seed<k>/` trên server, không đưa lên Git. "
               "File dự đoán `predictions/F01_seed*_test.csv` và `predictions/T00_seed*_test.csv` là đầu vào trực tiếp cho `eval.py score`/`grade`. "
-              "Notebook: `code/lab_day2.ipynb` (thêm link notebook Kaggle/Colab công khai vào README khi xuất bản). "
-              "Danh sách tất cả cấu hình có trong `results.xlsx` và `runs/`.", ""]
+              "Notebook: `code/lab_day2.ipynb`; link Colab trực tiếp nằm trong README. "
+              "Danh sách tất cả cấu hình có trong `results.xlsx` và `logs/`; đầu ra `eval.py score`/`grade` nằm trong `evaluation/`.", ""]
     path=SUB/"report.md"
     path.write_text("\n".join(lines),encoding="utf-8")
     print("Wrote",path)

@@ -1,0 +1,7 @@
+{
+  "uniform_ce_theory": 2.1972245773362196,
+  "initial_head_loss": 2.269869327545166,
+  "overfit_final_loss": 0.0006882993038743734,
+  "focal_gamma0_error": 0.0,
+  "cutmix_lambda": 0.7405133928571428
+}

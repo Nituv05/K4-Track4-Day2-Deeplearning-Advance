@@ -1,0 +1,9 @@
+{
+  "augmentation_source": "T04",
+  "loss_source": "T05",
+  "changes": {
+    "aug": "randaug",
+    "loss": "ls",
+    "label_smoothing": 0.1
+  }
+}

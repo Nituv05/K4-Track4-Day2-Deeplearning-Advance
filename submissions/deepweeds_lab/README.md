@@ -8,6 +8,8 @@ Vào **Code → New Notebook → Import**, chọn GitHub/URL và nhập `https:/
 
 Trên **Colab**, mở cùng notebook bằng GitHub URL, chọn `Runtime → Change runtime type → GPU`, rồi chạy từ ô đầu. `prepare` tải bộ ảnh Zenodo nếu chưa có `data/images`. Thư mục `/content` bị xóa khi phiên Colab kết thúc: hãy giữ phiên hoạt động đến ô cuối và tải `deepweeds_submission.zip` trong bảng Files. Nếu phiên chỉ bị ngắt kernel nhưng file còn, chạy lại ô đầu và các stage; mỗi thí nghiệm đang dở tiếp tục từ checkpoint của epoch trước. Trên Kaggle, hãy lưu phiên bản notebook kèm output để giữ kết quả.
 
+[Mở notebook trực tiếp trên Colab](https://colab.research.google.com/github/Nituv05/K4-Track4-Day2-VuThuongTin-2A202602955-Deeplearning-Advance/blob/main/submissions/deepweeds_lab/code/lab_day2.ipynb). Phiên chạy trên server dùng Python 3.13.5, PyTorch 2.9.0+cu126, torchvision 0.24.0+cu126, timm 1.0.20, numpy 2.2.6, pandas 2.3.3, scipy 1.16.2, matplotlib 3.10.7, Pillow 11.3.0 và openpyxl 3.1.5 trên RTX 4090. Phiên bản cụ thể của mỗi lần huấn luyện cũng được lưu trong `config.json`.
+
 ## Cài đặt và thứ tự chạy
 
 ```bash
@@ -33,16 +35,21 @@ Lưu ý dữ liệu gốc: các file fold chỉ có `Filename,Label`. Một ản
 python submissions/deepweeds_lab/code/experiments.py inference --source T03
 ```
 
-Xem `inference_results.json` để chọn `METHOD` từ I00–I05 theo macro-F1 val, ECE và p95. I01 là lật ngang, I02 là 5 crop, I03 là hai độ phân giải, I04 là temperature scaling khớp trên val, I05 là gộp Conv+BatchNorm. **Chỉ sau khi chốt SOURCE và METHOD trên val**, chạy:
+Xem `inference_results.json` để chọn `METHOD` từ I00–I05 theo macro-F1 val, ECE và p95. I01 là lật ngang, I02 gộp ảnh gốc với 5 crop (6 forward), I03 là hai độ phân giải, I04 là temperature scaling khớp trên val, I05 là gộp Conv+BatchNorm. **Chỉ sau khi chốt SOURCE và METHOD trên val**, chạy:
 
 ```bash
 python submissions/deepweeds_lab/code/experiments.py final --source T03 --method I04
 python submissions/deepweeds_lab/code/experiments.py export
+python submissions/deepweeds_lab/code/audit.py
 python eval.py score --pred 'submissions/deepweeds_lab/predictions/F01_seed*_test.csv' --test-csv data/labels/test_subset0.csv --labels data/labels/labels.csv --tag F01 --out eval_out
 python eval.py score --pred 'submissions/deepweeds_lab/predictions/T00_seed*_test.csv' --test-csv data/labels/test_subset0.csv --labels data/labels/labels.csv --tag T00 --out eval_out
 python eval.py grade --final 'submissions/deepweeds_lab/predictions/F01_seed*_test.csv' --baseline 'submissions/deepweeds_lab/predictions/T00_seed*_test.csv' --test-csv data/labels/test_subset0.csv --labels data/labels/labels.csv
 ```
 
-`final` huấn luyện lại F01 và T00 với seed 0, 1, 2; đánh giá test đúng một lượt mỗi seed. Nếu chọn I04, `F01uncal_seed*_test.csv` được lưu từ cùng logit test để đối chiếu ECE, không đọc lại test. Checkpoint `last.pt` được lưu sau mỗi epoch để tiếp tục khi phiên bị ngắt và được xóa sau khi hoàn tất; `best.pt` được giữ lại. `export` tạo `results.xlsx` từ log và file dự đoán thật; khi đủ ba seed của F01 và T00, nó còn tạo `report.md`, ma trận nhầm lẫn, ảnh lỗi và biểu đồ độ chính xác–độ trễ. Ô cuối notebook đóng gói code, README, bảng, báo cáo, ảnh và dự đoán vào `deepweeds_submission.zip` để tải về. Không có số liệu giả được đưa vào báo cáo.
+`final` huấn luyện lại F01 và T00 với seed 0, 1, 2; đánh giá test đúng một lượt mỗi seed. Nếu chọn I04, `F01uncal_seed*_test.csv` được lưu từ cùng logit test để đối chiếu ECE, không đọc lại test. Checkpoint `last.pt` được lưu sau mỗi epoch để tiếp tục khi phiên bị ngắt và được xóa sau khi hoàn tất; `best.pt` được giữ lại. `export` tạo `results.xlsx` từ log và file dự đoán thật; khi đủ ba seed của F01 và T00, nó còn tạo `report.md`, ma trận nhầm lẫn, ảnh lỗi và biểu đồ độ chính xác–độ trễ. Nó cũng sao chép cấu hình, lịch sử epoch và logit nhỏ vào `logs/`; checkpoint lớn không được commit. `audit.py` kiểm số run, split, sheet, biểu đồ và đối chiếu từng chỉ số test trong Excel với `eval.py`. Ô cuối notebook đóng gói code, README, bảng, báo cáo, ảnh, log, dự đoán và đầu ra `eval.py` trong `evaluation/` vào `deepweeds_submission.zip` để tải về. Không có số liệu giả được đưa vào báo cáo.
+
+Phiên chạy server đã chốt B03 + I03 theo val. Temperature scaling I04 được đánh giá trên val nhưng không phải phương pháp cuối, nên `eval.py grade` để I4(a) ở trạng thái chưa chấm; các ý còn lại được chấm từ file dự đoán F01/T00 thật.
+
+ZIP bài nộp giữ cấu trúc `submissions/deepweeds_lab/` và kèm `eval.py` gốc ở thư mục gốc, để có thể giải nén rồi chạy lại các lệnh từ thư mục đó. `data/` và các checkpoint `.pt` không nằm trong ZIP hoặc Git.
 
 Phiên bản thư viện, seed, tag trọng số, cấu hình và thời gian epoch được ghi trong `runs/<exp_id>/seed<k>/config.json`, `history.csv`, `summary.json`. Tên notebook chạy lại là `code/lab_day2.ipynb`; đường dẫn notebook Colab/Kaggle công khai phải được thêm sau khi bạn tải notebook lên nền tảng đó.
