@@ -97,10 +97,17 @@ def prepare():
     if h.hexdigest()!=EXPECTED_MD5:
         raise ValueError(f"images.zip MD5 mismatch: {h.hexdigest()}")
     with zipfile.ZipFile(archive) as z:
-        for info in z.infolist():
+        members=z.infolist()
+        for info in members:
             if ".." in Path(info.filename).parts or Path(info.filename).is_absolute():
                 raise ValueError(f"unsafe archive member: {info.filename}")
-        z.extractall(DATA)
+        # The Zenodo archive stores JPGs at its root, without an images/ folder.
+        if not all(len(Path(info.filename).parts)==1 and info.filename.lower().endswith(".jpg") for info in members):
+            raise ValueError("images.zip has an unexpected directory layout")
+        image_target=DATA/"images"
+        image_target.mkdir(parents=True,exist_ok=True)
+        if not all((image_target/info.filename).is_file() for info in members):
+            z.extractall(image_target)
     if not (DATA/"images").exists():
         raise FileNotFoundError("Set DATA/images to the extracted JPG directory")
     print("Verified images.zip MD5 and extracted to",DATA)
